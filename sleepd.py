@@ -19,13 +19,20 @@ Threads:
   * /unsubscribe - Remove user from watchlist
 * Main
   * Status dict
-  * SQLite
     * Member
       * Basic info
       * Subscribed?
       * Timezone
     * Chat Group
     * Sleep start/end events
+
+STATE = {
+    # subscribed users
+    "users": {id: {<tg-formatted object>}},
+    "events": {id: [<unix timestamps>]},
+    "status": {}
+}
+
 '''
 
 
@@ -36,36 +43,17 @@ import time
 import json
 import socket
 import logging
+import datetime
 import requests
+import itertools
 import threading
-import socketserver
-import urllib.parse
 
+import pytz
 import tgcli
-
-TIMEZONE = 8 * 3600
-CUTWINDOW = (0 * 3600, 6 * 3600)
 
 logging.basicConfig(stream=sys.stderr, format='%(asctime)s [%(name)s:%(levelname)s] %(message)s', level=logging.DEBUG if sys.argv[-1] == '-v' else logging.INFO)
 
 logger_botapi = logging.getLogger('botapi')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 class AttrDict(dict):
 
@@ -127,90 +115,152 @@ def processmsg(d):
 
 # Cli bot
 
-
-def get_members():
-    global CFG
-    # To ensure the id is valid
-    TGCLI.cmd_dialog_list()
-    peername = '%s#id%d' % (CFG.grouptype, CFG.groupid)
-    STATE.members = {}
-    if CFG.grouptype == 'channel':
-        items = TGCLI.cmd_channel_get_members(peername, 100)
-        for item in items:
-            STATE.members[str(item['peer_id'])] = item
-        dcount = 100
-        while items:
-            items = TGCLI.cmd_channel_get_members(peername, 100, dcount)
-            for item in items:
-                STATE.members[str(item['peer_id'])] = item
-            dcount += 100
-        STATE.title = TGCLI.cmd_channel_info(peername)['title']
-    else:
-        obj = TGCLI.cmd_chat_info(peername)
-        STATE.title = obj['title']
-        items = obj['members']
-        for item in items:
-            STATE.members[str(item['peer_id'])] = item
-    logging.info('Original title is: ' + STATE.title)
-
-
 def handle_update(obj):
     global STATE
     try:
-        if (obj.get('event') == 'message' and obj['to']['peer_id'] == CFG.groupid and obj['to']['peer_type'] == CFG.grouptype):
-            STATE.members[str(obj['from']['peer_id'])] = obj['from']
-            STATE.title = obj['to']['title']
+        if obj.get('event') in ('message', 'service'):
+            update_user(obj['from'])
+            user_event(user, obj['date'])
+        elif obj.get('event') == 'online-status':
+            update_user(obj['user'])
+            try:
+                # it's localtime
+                when = time.mktime(time.strptime(obj['when'], '%Y-%m-%d %H:%M:%S'))
+                user_event(user, when)
+            except ValueError:
+                pass
     except Exception:
         logging.exception("can't handle message event")
 
 # Processing
 
+def init_db(filename):
+    global DB, CONN
+    DB = sqlite3.connect(filename)
+    DB.row_factory = sqlite3.Row
+    CONN = DB.cursor()
+    CONN.execute('CREATE TABLE IF NOT EXISTS users ('
+        'id INTEGER PRIMARY KEY,' # peer_id
+        'username TEXT,'
+        'first_name TEXT,'
+        'last_name TEXT,'
+        'subscribed INTEGER,'
+        'timezone TEXT'
+    ')')
+    CONN.execute('CREATE TABLE IF NOT EXISTS events ('
+        'user INTEGER,'
+        'time INTEGER,'
+        'PRIMARY KEY (user, time),'
+        'FOREIGN KEY (user) REFERENCES users(id)'
+    ')')
+    CONN.execute('CREATE TABLE IF NOT EXISTS sleep ('
+        'user INTEGER,'
+        'time INTEGER,'
+        'duration INTEGER,'
+        'PRIMARY KEY (user, time),'
+        'FOREIGN KEY (user) REFERENCES users(id)'
+    ')')
+    users = {}
+    for row in CONN.execute('SELECT * FROM users'):
+        users[row['id']] = dict(row)
+    return users
 
-def verify_token(token):
-    serializer = URLSafeTimedSerializer(CFG.secretkey, 'Orz')
-    try:
-        uid = serializer.loads(token, max_age=CFG.tokenexpire)
-        if str(uid) not in STATE.members:
-            return False
-        if time.time() - STATE.tokens[str(uid)] > CFG.tokenexpire:
-            return False
-    except Exception:
-        return False
-    return uid
-
-
-def cut_title(title):
-    return title[len(CFG.prefix):]
-
-
-def change_title(token, title):
-    uid = verify_token(token)
-    if uid is False:
-        return 403, {'error': 'invalid token'}
-    title = RE_INVALID.sub('', title).replace('\n', ' ')
-    if len(CFG.prefix + title) > 255:
-        return 400, {'error': 'title too long'}
-    ret = TGCLI.cmd_rename_channel('%s#id%d' % (CFG.grouptype, CFG.groupid),
-                                   CFG.prefix + title)
-    if ret['result'] == 'SUCCESS':
-        user = STATE.members[str(uid)]
-        uname = user.get('username')
-        if uname:
-            bot_api('sendMessage', chat_id=CFG.apigroupid,
-                    text='@%s 修改了群组名称。' % uname)
-        else:
-            uname = user.get('first_name', '')
-            if 'last_name' in user:
-                uname += ' ' + user['last_name']
-            bot_api('sendMessage', chat_id=CFG.apigroupid,
-                    text='%s 修改了群组名称。' % uname)
-        del STATE.tokens[str(uid)]
-        STATE.title = CFG.prefix + title
-        logging.info('@%s changed title to %s' % (uname, STATE.title))
-        return 200, ret
+def update_user(user, subscribed=None, timezone=None):
+    uid = user.get('peer_id') or user['id']
+    if uid in USER_CACHE:
+        USER_CACHE[uid].update(user)
+        updkey = ''
+        updval = [user.get('username'), user.get('first_name', ''), user.get('last_name')]
+        if subscribed is not None:
+            updkey += ', subscribed=?'
+            updval.append(subscribed)
+        if timezone:
+            updkey += ', timezone=?'
+            updval.append(timezone)
+        updval.append(uid)
+        CONN.execute('UPDATE users SET username=?, first_name=?, last_name=?%s WHERE id=?' % updkey, updval)
     else:
-        return 406, ret
+        USER_CACHE[uid] = user
+        timezone = USER_CACHE[uid]['timezone'] = timezone or CFG['defaulttz']
+        subscribed = USER_CACHE[uid]['subscribed'] = subscribed or 0
+        CONN.execute('REPLACE INTO users VALUES (?,?,?,?,?,)',
+                     (uid, user.get('username'), user.get('first_name', ''),
+                     user.get('last_name'), subscribed, timezone))
 
+def user_event(user, eventtime):
+    uid = user.get('peer_id') or user['id']
+    CONN.execute('REPLACE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
+
+def replace_dt_time(fromdatetime, seconds):
+    return (datetime.datetime.combine(fromdatetime,
+            datetime.time(tzinfo=fromdatetime.tzinfo)) +
+            datetime.timedelta(seconds=seconds))
+
+def status_update():
+    '''
+    Identify sleep time using rules as follows:
+
+    -24h    0           6   now
+       /=====================\  <- SELECT
+       .  x-+-----------+----?
+       .    |     x-----+----？
+       .    |           | x--?
+       .  x-+--------x x| xx
+       .  x-+-----------+--x
+       .  xx| x------x x| xx
+       .    | x x-------+-x
+       .  x |    x------+--x
+       .  x | x       x-+----?
+     x .    |           |    ?
+    '''
+    expires = time.time() - 86400
+    stats = []
+    for user, group in itertools.groupby(CONN.execute(
+        'SELECT events.user, events.time FROM events'
+        ' INNER JOIN users ON events.user = users.id'
+        ' WHERE events.time >= ? AND users.subscribed = 1'
+        ' ORDER BY events.user ASC, events.time ASC', (expires,)),
+        key=lambda x: x[0]):
+        start, interval = None, None
+        usertime = datetime.datetime.now(pytz.timezone(USER_CACHE[user]['timezone']))
+        window = (replace_dt_time(usertime, CFG['cutwindow'][0]).timestamp(),
+                  replace_dt_time(usertime, CFG['cutwindow'][1]).timestamp())
+        lasttime = None
+        left, right = None, None
+        intervals = []
+        for _, etime in group:
+            if lasttime:
+                intervals.append((etime - lasttime, lasttime))
+                lasttime = etime
+                if etime > window[1]:
+                    right = etime
+                    break
+            elif etime < window[0]:
+                left = etime
+            elif left:
+                intervals.append((etime - left, left))
+                lasttime = etime
+                if etime > window[1]:
+                    right = etime
+                    break
+            else:
+                lasttime = etime
+        if intervals:
+            if right:
+                interval, start = max(intervals)
+            else:
+                start = etime
+        elif lasttime:
+            start = lasttime
+        elif left:
+            start = left
+        # else: pass
+        stats.append((user, start, interval))
+    for user, start, interval in stats:
+        CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?, ?, ?)',
+                     (user, start, interval))
+    CONN.execute('DELETE FROM events WHERE time < ?', (expires,))
+    return stats
 
 def load_config():
     cfg = AttrDict(json.load(open('config.json', encoding='utf-8')))
@@ -232,12 +282,12 @@ def run(server_class=ThreadingHTTPServer, handler_class=HTTPHandler):
 
 if __name__ == '__main__':
     CFG, STATE = load_config()
+    USER_CACHE = {}
     TGCLI = tgcli.TelegramCliInterface(CFG.tgclibin)
     TGCLI.ready.wait()
     TGCLI.on_json = handle_update
     try:
-        if not STATE.members:
-            get_members()
+        USER_CACHE = init_db()
         token_gc()
 
         apithr = threading.Thread(target=getupdates)

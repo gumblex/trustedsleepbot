@@ -1,0 +1,9 @@
+{
+"grouptype": "channel",
+"groupid": 1001022222,
+"apigroupid": -1001001022222,
+"apitoken": "BOT_API_TOKEN",
+"cutwindow": [0, 21600],
+"defaulttz": "Asia/Shanghai",
+"tgclibin": "../../tg/bin/telegram-cli"
+}
