@@ -10,7 +10,7 @@ Threads:
 * tg-cli
   * Event: set online state
 * Telegram API polling
-  * /status - List sleeping status (group only)
+  * /status - List sleeping status (group/private)
   * /list - List stats about sleep time (group only)
   * /help - About the bot
   * /start - Describe how to use
@@ -18,30 +18,20 @@ Threads:
   * /subscribe - Add user to watchlist
   * /unsubscribe - Remove user from watchlist
 * Main
-  * Status dict
+  * SQLite
     * Member
       * Basic info
       * Subscribed?
       * Timezone
-    * Chat Group
     * Sleep start/end events
-
-STATE = {
-    # subscribed users
-    "users": {id: {<tg-formatted object>}},
-    "events": {id: [<unix timestamps>]},
-    "status": {}
-}
-
 '''
 
 
 import os
-import re
 import sys
 import time
 import json
-import socket
+import sqlite3
 import logging
 import datetime
 import requests
@@ -89,34 +79,46 @@ def bot_api(method, **params):
 
 
 def getupdates():
-    global STATE
+    global CFG
     while 1:
         try:
             updates = bot_api('getUpdates', offset=STATE['offset'], timeout=10)
-        except Exception as ex:
+        except Exception:
             logger_botapi.exception('Get updates failed.')
             continue
         if updates:
             logger_botapi.debug('Messages coming.')
-            STATE['offset'] = updates[-1]["update_id"] + 1
+            CFG['offset'] = updates[-1]["update_id"] + 1
             for upd in updates:
                 processmsg(upd)
         time.sleep(.2)
+
+
+def parse_cmd(self, text: str):
+    t = text.strip().replace('\xa0', ' ').split(' ', 1)
+    if not t:
+        return None
+    cmd = t[0].rsplit('@', 1)
+    if len(cmd[0]) < 2 or cmd[0][0] not in "/'":
+        return None
+    if len(cmd) > 1 and cmd[-1] not in self.usernames:
+        return None
+    expr = t[1] if len(t) > 1 else ''
+    return (cmd[0][1:], expr)
 
 
 def processmsg(d):
     logger_botapi.debug('Msg arrived: %r' % d)
     if 'message' in d:
         msg = d['message']
-        if msg['chat']['type'] == 'private' and msg.get('text', '').startswith('/t'):
-            bot_api('sendMessage', chat_id=msg['chat']['id'],
-                    text=CFG.url + get_token(msg['from']['id']))
-            logger_botapi.info('Sent a token to %s' % msg['from'])
+        cmdexp = parse_cmd(msg.get('text', ''))
+        # if msg['chat']['type'] == 'private' and msg.get('text', '').startswith('/t'):
+        bot_api('sendMessage', chat_id=msg['chat']['id'],
+                text=CFG.url + get_token(msg['from']['id']))
 
 # Cli bot
 
 def handle_update(obj):
-    global STATE
     try:
         if obj.get('event') in ('message', 'service'):
             update_user(obj['from'])
@@ -263,16 +265,11 @@ def status_update():
     return stats
 
 def load_config():
-    cfg = AttrDict(json.load(open('config.json', encoding='utf-8')))
-    if os.path.isfile('state.json'):
-        state = AttrDict(json.load(open('state.json', encoding='utf-8')))
-    else:
-        state = AttrDict({'members': {}})
-    return cfg, state
+    return AttrDict(json.load(open('config.json', encoding='utf-8')))
 
 
 def save_config():
-    json.dump(STATE, open('state.json', 'w'), sort_keys=True, indent=1)
+    json.dump(CFG, open('config.json', 'w'), sort_keys=True, indent=1)
 
 
 def run(server_class=ThreadingHTTPServer, handler_class=HTTPHandler):
@@ -281,7 +278,7 @@ def run(server_class=ThreadingHTTPServer, handler_class=HTTPHandler):
     httpd.serve_forever()
 
 if __name__ == '__main__':
-    CFG, STATE = load_config()
+    CFG = load_config()
     USER_CACHE = {}
     TGCLI = tgcli.TelegramCliInterface(CFG.tgclibin)
     TGCLI.ready.wait()
