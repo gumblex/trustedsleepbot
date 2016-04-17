@@ -183,6 +183,7 @@ def handle_api_update(d):
                 COMMANDS[cmd](expr, msg['chat']['id'], msg['message_id'], msg)
             elif msg['chat']['type'] == 'private':
                 sendmsg(_('Invalid command. Send /help for help.'), chatid, replyid)
+            update_user(msg['from'])
             update_user_group(msg['from'], msg['chat'])
             user_event(msg['from'], msg['date'])
         except Exception as ex:
@@ -555,8 +556,8 @@ def cmd_help(expr, chatid, replyid, msg):
         sendmsg('\n'.join(_(cmd.__doc__) for cmdname, cmd in COMMANDS.items() if cmd.__doc__), chatid, replyid)
 
 def getufname(user, maxlen=100):
-    name = user['first_name']
-    if 'last_name' in user:
+    name = user['first_name'] or ''
+    if user.get('last_name'):
         name += ' ' + user['last_name']
     if len(name) > maxlen:
         name = name[:maxlen] + '…'
