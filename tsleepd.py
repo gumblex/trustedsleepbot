@@ -405,6 +405,9 @@ def update_group_members(chat):
 def cmd_status(expr, chatid, replyid, msg):
     '''/status - List sleeping status'''
     if chatid > 0:
+        if msg['from']['id'] not in USER_CACHE:
+            sendmsg(_('Please first /subscribe.'), chatid, replyid)
+            return
         start, interval = user_status_update(msg['from'])
         usertz = pytz.timezone(USER_CACHE[msg['from']['id']]['timezone'])
         if start:
@@ -469,7 +472,11 @@ def cmd_average(expr, chatid, replyid, msg):
     '''/average - List statistics about sleep time'''
     if chatid > 0:
         uid = msg['from']['id']
-        usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
+        try:
+            usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
+        except KeyError:
+            sendmsg(_('Please first /subscribe.'), chatid, replyid)
+            return
         avgstart, avginterval = user_average_sleep(usertz, CONN.execute(
             'SELECT time, duration FROM sleep WHERE user = ?', (uid,)))
         if avgstart is not None:
