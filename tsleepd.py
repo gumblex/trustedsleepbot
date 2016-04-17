@@ -265,7 +265,7 @@ def user_event(user, eventtime):
 def hour_minutes(seconds):
     m = round(seconds / 60)
     h, m = divmod(m, 60)
-    return '%d:%02d' % (h, m)
+    return '%02d:%02d' % (h, m)
 
 def replace_dt_time(fromdatetime, seconds):
     return (datetime.datetime.combine(fromdatetime,
