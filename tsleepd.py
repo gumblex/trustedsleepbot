@@ -168,8 +168,6 @@ def parse_cmd(text: str):
     cmd = t[0].rsplit('@', 1)
     if len(cmd[0]) < 2 or cmd[0][0] not in "/'":
         return (None, None)
-    if len(cmd) > 1 and cmd[-1] not in self.usernames:
-        return (None, None)
     expr = t[1] if len(t) > 1 else ''
     return (cmd[0][1:], expr)
 
