@@ -184,6 +184,7 @@ def handle_api_update(d):
             elif msg['chat']['type'] == 'private':
                 sendmsg(_('Invalid command. Send /help for help.'), chatid, replyid)
             update_user_group(msg['from'], msg['chat'])
+            user_event(msg['from'], msg['date'])
         except Exception as ex:
             logger_botapi.exception('Failed to process a message.')
 
@@ -258,7 +259,7 @@ def update_user(user, subscribed=None, timezone=None):
 def user_event(user, eventtime):
     uid = user.get('peer_id') or user['id']
     if uid in USER_CACHE and USER_CACHE[uid]['subscribed']:
-        CONN.execute('REPLACE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
+        CONN.execute('INSERT OR IGNORE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
 
 def hour_minutes(seconds):
     m = round(seconds / 60)
