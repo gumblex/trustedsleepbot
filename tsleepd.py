@@ -422,7 +422,7 @@ def cmd_status(expr, chatid, replyid, msg):
         else:
             sendmsg(_('You have been offline for some time.'), chatid, replyid)
     else:
-        update_group_members(msg['from'])
+        update_group_members(msg['chat'])
         text = []
         startsum = intrvsum = 0
         validstartcount = validintervcount = 0
@@ -487,7 +487,7 @@ def cmd_average(expr, chatid, replyid, msg):
         else:
             sendmsg(_('Not enough data.'), chatid, replyid)
     else:
-        update_group_members(msg['from'])
+        update_group_members(msg['chat'])
         uid = msg['chat']['id']
         startsum = intrvsum = 0
         stats = []
