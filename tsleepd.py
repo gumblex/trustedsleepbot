@@ -358,7 +358,7 @@ def group_status_update(chat):
     for user, group in itertools.groupby(CONN.execute(
         'SELECT events.user, events.time FROM events'
         ' INNER JOIN users ON events.user = users.id'
-        ' INNER JOIN user_chats ON events.user = user_chats.id'
+        ' INNER JOIN user_chats ON events.user = user_chats.user'
         ' WHERE user_chats.chat = ? AND events.time >= ?'
         ' AND users.subscribed = 1'
         ' ORDER BY events.user ASC, events.time ASC', (uid, expires)),
@@ -485,7 +485,8 @@ def cmd_average(expr, chatid, replyid, msg):
         text = []
         for user, group in itertools.groupby(CONN.execute(
             'SELECT sleep.user, sleep.time, sleep.duration FROM sleep'
-            ' INNER JOIN user_chats ON events.user = user_chats.id'
+            ' INNER JOIN users ON sleep.user = users.id'
+            ' INNER JOIN user_chats ON sleep.user = user_chats.user'
             ' WHERE user_chats.chat = ? AND users.subscribed = 1'
             ' ORDER BY sleep.user', (uid,)),
             key=operator.itemgetter(0)):
