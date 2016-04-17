@@ -183,8 +183,9 @@ def handle_api_update(d):
                 COMMANDS[cmd](expr, msg['chat']['id'], msg['message_id'], msg)
             elif msg['chat']['type'] == 'private':
                 sendmsg(_('Invalid command. Send /help for help.'), chatid, replyid)
+            else:
+                update_user_group(msg['from'], msg['chat'])
             update_user(msg['from'])
-            update_user_group(msg['from'], msg['chat'])
             user_event(msg['from'], msg['date'])
         except Exception as ex:
             logger_botapi.exception('Failed to process a message.')
