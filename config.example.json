@@ -5,6 +5,8 @@
 "apitoken": "BOT_API_TOKEN",
 "cutwindow": [0, 21600],
 "defaulttz": "Asia/Shanghai",
+"database": "sleep.db",
+"languages": null,
 "tgclibin": "../../tg/bin/telegram-cli",
 "offset": 0
 }

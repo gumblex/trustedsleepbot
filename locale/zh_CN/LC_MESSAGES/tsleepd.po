@@ -5,8 +5,8 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: Trusted Sleep Bot\n"
-"POT-Creation-Date: 2016-04-15 23:08+0800\n"
-"PO-Revision-Date: 2016-04-15 23:14+0800\n"
+"POT-Creation-Date: 2016-04-17 20:34+0800\n"
+"PO-Revision-Date: 2016-04-17 20:34+0800\n"
 "Last-Translator: Dingyuan Wang <abcdoyle888@gmail.com>\n"
 "Language-Team: \n"
 "Language: zh_CN\n"
@@ -19,51 +19,113 @@ msgstr ""
 "X-Poedit-Basepath: ../../..\n"
 "X-Poedit-SearchPath-0: tsleepd.pot\n"
 
-#: tsleepd.py:184
+#: tsleepd.py:187
 msgid "Invalid command. Send /help for help."
 msgstr "未知命令。请发送 /help 获得帮助。"
 
-#: tsleepd.py:370
+#: tsleepd.py:286
+msgid ""
+"\n"
+"    Identify sleep time using rules as follows:\n"
+"\n"
+"    -24h    0           6   now\n"
+"       /=====================\\  <- SELECT\n"
+"       .  x-+-----------+----?\n"
+"       .    |     x-----+----？\n"
+"       .    |           | x--?\n"
+"       .  x-+--------x x| xx\n"
+"       .  x-+-----------+--x\n"
+"       .  xx| x------x x| xx\n"
+"       .    | x x-------+-x\n"
+"       .  x |    x------+--x\n"
+"       .  x | x       x-+----?\n"
+"     x .    |           |    ?\n"
+"    "
+msgstr ""
+
+#: tsleepd.py:402
+msgid "/status - List sleeping status"
+msgstr "/status - 显示睡眠状态"
+
+#: tsleepd.py:408
 msgid "Your last sleep is %s long, from %s to %s."
 msgstr "你上次睡眠时间 %s，从 %s 到 %s。"
 
-#: tsleepd.py:372
+#: tsleepd.py:410
 msgid "Go to sleep!"
 msgstr "你怎么这么熟练啊，可信睡眠失败了多少次啊！"
 
-#: tsleepd.py:374
+#: tsleepd.py:412
 msgid "You have been offline for some time."
 msgstr "好久不见。"
 
-#: tsleepd.py:379 tsleepd.py:384
+#: tsleepd.py:439 tsleepd.py:468 tsleepd.py:501
+msgid "Average: %s, %s→%s"
+msgstr "平均: %s, %s→%s"
+
+#: tsleepd.py:441 tsleepd.py:473 tsleepd.py:506
+msgid "Not enough data."
+msgstr "数据不足。"
+
+#: tsleepd.py:461
+msgid "/average - List statistics about sleep time"
+msgstr "/average - 显示睡眠时间统计"
+
+#: tsleepd.py:509
+msgid "/subscribe - Add you to the watchlist"
+msgstr "/subscribe - 加入监视列表"
+
+#: tsleepd.py:511
 msgid "%s, you are subscribed."
 msgstr "%s，你已订阅该服务。"
 
-#: tsleepd.py:389
+#: tsleepd.py:515
+msgid "/unsubscribe - Remove you from the watchlist"
+msgstr "/unsubscribe - 离开监视列表"
+
+#: tsleepd.py:517
 msgid "%s, you are unsubscribed."
 msgstr "%s，你已取消订阅。"
 
-#: tsleepd.py:395
+#: tsleepd.py:520
+msgid "/settz - Set your timezone"
+msgstr "/settz - 设置你的时区"
+
+#: tsleepd.py:524
 msgid "Your timezone is %s now."
 msgstr "你的时区已更改为 %s。"
 
-#: tsleepd.py:401
+#: tsleepd.py:530
 msgid "Invalid timezone. Your current timezone is %s."
 msgstr "时区无效。你现在的时区是 %s。"
 
-#: tsleepd.py:404
+#: tsleepd.py:533
 msgid ""
 "This is Trusted Sleep Bot. It can track users' sleep habit by using Telegram "
-"online status.\n"
-"Send me /help for help."
+"online status. Send me /help for help."
 msgstr ""
-"这是「可信睡眠机器人」，使用 Telegram 在线状态跟踪用户的睡眠习惯。\n"
-"发送 /help 获得帮助。"
+"这是「可信睡眠机器人」，请使用 Telegram 在线状态跟踪用户的睡眠习惯。请发送 /"
+"help 获得帮助。"
 
-#: tsleepd.py:414
+#: tsleepd.py:536
+msgid "/help - Show usage"
+msgstr "/help - 显示命令帮助"
+
+#: tsleepd.py:543
 msgid "Help is not available for %s"
 msgstr "没有命令 %s 的帮助"
 
-#: tsleepd.py:416
+#: tsleepd.py:545
 msgid "Command not found."
 msgstr "命令未找到。"
+
+#~ msgid "/help - Show usage."
+#~ msgstr "/help - 显示命令帮助"
+
+#~ msgid ""
+#~ "This is Trusted Sleep Bot. It can track users' sleep habit by using "
+#~ "Telegram online status.\n"
+#~ "Send me /help for help."
+#~ msgstr ""
+#~ "这是「可信睡眠机器人」，请使用 Telegram 在线状态跟踪用户的睡眠习惯。\n"
+#~ "请发送 /help 获得帮助。"

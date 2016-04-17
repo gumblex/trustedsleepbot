@@ -31,14 +31,18 @@ import os
 import sys
 import time
 import json
+import queue
 import sqlite3
 import logging
 import gettext
 import datetime
 import requests
+import operator
 import functools
 import itertools
 import threading
+import collections
+import concurrent.futures
 
 import pytz
 import tgcli
@@ -58,17 +62,17 @@ class AttrDict(dict):
 
 # Cli bot
 
-def handle_update(obj):
+def handle_tg_update(obj):
     try:
         if obj.get('event') in ('message', 'service'):
-            update_user(obj['from'])
-            user_event(user, obj['date'])
+            #update_user(obj['from'])
+            user_event(obj['from'], obj['date'])
         elif obj.get('event') == 'online-status':
-            update_user(obj['user'])
+            #update_user(obj['user'])
             try:
                 # it's localtime
                 when = time.mktime(time.strptime(obj['when'], '%Y-%m-%d %H:%M:%S'))
-                user_event(user, when)
+                user_event(obj['user'], when)
             except ValueError:
                 pass
     except Exception:
@@ -81,7 +85,6 @@ def tg_get_members(chat):
     if chattype == 'group':
         peername = 'chat#id%d' % (-chat['id'])
         obj = TGCLI.cmd_chat_info(peername)
-        STATE.title = obj['title']
         return obj['members']
     elif chattype == 'supergroup':
         peername = 'channel#id%d' % (-chat['id'] - 1000000000000)
@@ -146,7 +149,7 @@ def getupdates():
     global CFG
     while 1:
         try:
-            updates = bot_api('getUpdates', offset=STATE['offset'], timeout=10)
+            updates = bot_api('getUpdates', offset=CFG['offset'], timeout=10)
         except Exception:
             logger_botapi.exception('Get updates failed.')
             continue
@@ -154,11 +157,11 @@ def getupdates():
             logger_botapi.debug('Messages coming.')
             CFG['offset'] = updates[-1]["update_id"] + 1
             for upd in updates:
-                processmsg(upd)
+                MSG_Q.put(upd)
         time.sleep(.2)
 
 
-def parse_cmd(self, text: str):
+def parse_cmd(text: str):
     t = text.strip().replace('\xa0', ' ').split(' ', 1)
     if not t:
         return (None, None)
@@ -171,7 +174,7 @@ def parse_cmd(self, text: str):
     return (cmd[0][1:], expr)
 
 
-def processmsg(d):
+def handle_api_update(d):
     logger_botapi.debug('Msg arrived: %r' % d)
     if 'message' in d:
         try:
@@ -188,9 +191,9 @@ def processmsg(d):
 
 # Processing
 
-def init_db(filename):
+def init_db():
     global DB, CONN
-    DB = sqlite3.connect(filename)
+    DB = sqlite3.connect(CFG['database'])
     DB.row_factory = sqlite3.Row
     CONN = DB.cursor()
     CONN.execute('CREATE TABLE IF NOT EXISTS users ('
@@ -201,10 +204,10 @@ def init_db(filename):
         'subscribed INTEGER,'
         'timezone TEXT'
     ')')
-    CONN.execute('CREATE TABLE IF NOT EXISTS user_groups ('
+    CONN.execute('CREATE TABLE IF NOT EXISTS user_chats ('
         'user INTEGER,'
-        'group INTEGER,'
-        'PRIMARY KEY (user, group),'
+        'chat INTEGER,'
+        'PRIMARY KEY (user, chat),'
         'FOREIGN KEY (user) REFERENCES users(id)'
     ')')
     CONN.execute('CREATE TABLE IF NOT EXISTS events ('
@@ -228,7 +231,7 @@ def init_db(filename):
 def update_user_group(user, chat):
     if chat['type'].endswith('group'):
         uid = user.get('peer_id') or user['id']
-        CONN.execute('INSERT OR IGNORE INTO user_groups (user, group) VALUES (?, ?)', (uid, chat['id']))
+        CONN.execute('INSERT OR IGNORE INTO user_chats (user, chat) VALUES (?, ?)', (uid, chat['id']))
 
 def update_user(user, subscribed=None, timezone=None):
     uid = user.get('peer_id') or user['id']
@@ -239,27 +242,47 @@ def update_user(user, subscribed=None, timezone=None):
         if subscribed is not None:
             updkey += ', subscribed=?'
             updval.append(subscribed)
+            USER_CACHE[uid]['subscribed'] = subscribed
         if timezone:
             updkey += ', timezone=?'
             updval.append(timezone)
+            USER_CACHE[uid]['timezone'] = timezone
         updval.append(uid)
         CONN.execute('UPDATE users SET username=?, first_name=?, last_name=?%s WHERE id=?' % updkey, updval)
     else:
         USER_CACHE[uid] = user
         timezone = USER_CACHE[uid]['timezone'] = timezone or CFG['defaulttz']
         subscribed = USER_CACHE[uid]['subscribed'] = subscribed or 0
-        CONN.execute('REPLACE INTO users VALUES (?,?,?,?,?,)',
+        CONN.execute('REPLACE INTO users VALUES (?,?,?,?,?,?)',
                      (uid, user.get('username'), user.get('first_name', ''),
                      user.get('last_name'), subscribed, timezone))
 
 def user_event(user, eventtime):
     uid = user.get('peer_id') or user['id']
-    CONN.execute('REPLACE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
+    if uid in USER_CACHE and USER_CACHE[uid]['subscribed']:
+        CONN.execute('REPLACE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
+
+def hour_minutes(seconds):
+    m = round(seconds / 60)
+    h, m = divmod(m, 60)
+    return '%d:%02d' % (h, m)
 
 def replace_dt_time(fromdatetime, seconds):
     return (datetime.datetime.combine(fromdatetime,
             datetime.time(tzinfo=fromdatetime.tzinfo)) +
             datetime.timedelta(seconds=seconds))
+
+def midnight_delta(fromdatetime):
+    fromtimestamp = fromdatetime.timestamp()
+    midnight = datetime.datetime.combine(fromdatetime, 
+        datetime.time(tzinfo=fromdatetime.tzinfo)).timestamp()
+    delta = fromtimestamp - midnight
+    if delta > 43200:
+        return delta - 86400
+    else:
+        return delta
+
+midnight_adjust = lambda delta: delta + 86400 if delta < 0 else delta
 
 def user_status(uid, events):
     '''
@@ -267,16 +290,16 @@ def user_status(uid, events):
 
     -24h    0           6   now
        /=====================\  <- SELECT
-       .  x-+-----------+----?
-       .    |     x-----+----？
-       .    |           | x--?
+       .  x-+-----------+----💤?
+       .    |     x-----+----💤?
+       .    |           | x  🌝?
        .  x-+--------x x| xx
        .  x-+-----------+--x
        .  xx| x------x x| xx
        .    | x x-------+-x
        .  x |    x------+--x
-       .  x | x       x-+----?
-     x .    |           |    ?
+       .  x | x       x-+----💤?
+     x .    |           |    🌝?
     '''
     start, interval = None, None
     usertime = datetime.datetime.now(pytz.timezone(USER_CACHE[uid]['timezone']))
@@ -285,13 +308,15 @@ def user_status(uid, events):
     lasttime = None
     left, right = None, None
     intervals = []
-    for _, etime in events:
+    for _user, etime in events:
         if lasttime:
             intervals.append((etime - lasttime, lasttime))
             lasttime = etime
             if etime > window[1]:
                 right = etime
                 break
+        elif etime > window[1]:
+            break
         elif etime < window[0]:
             left = etime
         elif left:
@@ -322,13 +347,31 @@ def user_status_update(user):
         ' INNER JOIN users ON events.user = users.id'
         ' WHERE events.user = ? AND events.time >= ?'
         ' AND users.subscribed = 1'
-        ' ORDER BY events.user ASC, events.time ASC', (uid, expires))):
-        start, interval = user_status(user, group)
-        stats.append((user, start, interval))
+        ' ORDER BY events.user ASC, events.time ASC', (uid, expires)))
     if start and interval:
         CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (uid, start, interval))
     return start, interval
+
+def group_status_update(chat):
+    expires = time.time() - 86400
+    uid = chat['id']
+    stats = []
+    for user, group in itertools.groupby(CONN.execute(
+        'SELECT events.user, events.time FROM events'
+        ' INNER JOIN users ON events.user = users.id'
+        ' INNER JOIN user_chats ON events.user = user_chats.id'
+        ' WHERE user_chats.chat = ? AND events.time >= ?'
+        ' AND users.subscribed = 1'
+        ' ORDER BY events.user ASC, events.time ASC', (uid, expires)),
+        key=operator.itemgetter(0)):
+        start, interval = user_status(user, group)
+        stats.append((user, start, interval))
+        if start and interval:
+            CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
+                     (user, start, interval))
+    stats.sort(key=lambda x: x[2] or 0, reverse=1)
+    return stats
 
 def all_status_update():
     expires = time.time() - 86400
@@ -338,10 +381,9 @@ def all_status_update():
         ' INNER JOIN users ON events.user = users.id'
         ' WHERE events.time >= ? AND users.subscribed = 1'
         ' ORDER BY events.user ASC, events.time ASC', (expires,)),
-        key=lambda x: x[0]):
+        key=operator.itemgetter(0)):
         start, interval = user_status(user, group)
         stats.append((user, start, interval))
-    for user, start, interval in stats:
         if start and interval:
             CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (user, start, interval))
@@ -361,34 +403,129 @@ def update_group_members(chat):
 
 
 def cmd_status(expr, chatid, replyid, msg):
+    '''/status - List sleeping status'''
     if chatid > 0:
         start, interval = user_status_update(msg['from'])
-        usertime = datetime.datetime.now(pytz.timezone(USER_CACHE[msg['from']['id']]['timezone']))
+        usertz = pytz.timezone(USER_CACHE[msg['from']['id']]['timezone'])
         if start:
             if interval:
-                ...
-                sendmsg(_('Your last sleep is %s long, from %s to %s.'))
+                userstart = datetime.datetime.fromtimestamp(start, usertz)
+                end = userstart + datetime.timedelta(seconds=interval)
+                sendmsg(_('Last sleep: %s, %s→%s.') % (hour_minutes(interval),
+                    userstart.strftime('%H:%M'), end.strftime('%H:%M')),
+                    chatid, replyid)
             else:
-                sendmsg(_('Go to sleep!'))
+                sendmsg(_('Go to sleep!'), chatid, replyid)
         else:
-            sendmsg(_('You have been offline for some time.'))
+            sendmsg(_('You have been offline for some time.'), chatid, replyid)
     else:
         update_group_members(msg['from'])
-        #return [row[0] for row in CONN.execute(
-        #'SELECT user FROM user_groups WHERE group = ?', (chat['id'],))]
-    sendmsg(_("%s, you are subscribed.") % getufname(msg['from']), chatid, replyid)
+        text = []
+        startsum = intrvsum = 0
+        validstartcount = validintervcount = 0
+        for uid, start, interval in group_status_update(msg['chat']):
+            if not start:
+                continue
+            dispname = getufname(USER_CACHE[uid])
+            usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
+            userstart = datetime.datetime.fromtimestamp(start, usertz)
+            startsum += midnight_delta(userstart)
+            validstartcount += 1
+            if interval:
+                end = userstart + datetime.timedelta(seconds=interval)
+                text.append('%s: %s, %s→%s' % (dispname, hour_minutes(interval),
+                    userstart.strftime('%H:%M'), end.strftime('%H:%M')))
+                intrvsum += interval
+                validintervcount += 1
+            else:
+                text.append('%s: %s→💤' % (dispname, userstart.strftime('%H:%M')))
+        if validintervcount:
+            avgstart = startsum/validstartcount
+            if avgstart < 0:
+                avgstart += 86400
+            avginterval = intrvsum/validintervcount
+            text.append(_('Average: %s, %s→%s') % (hour_minutes(avginterval),
+                hour_minutes(avgstart), hour_minutes(avgstart + avginterval)))
+        sendmsg('\n'.join(text) or _('Not enough data.'), chatid, replyid)
 
+
+def user_average_sleep(usertz, iterable):
+    startsum = intrvsum = 0
+    count = 0
+    for start, duration in iterable:
+        userstart = datetime.datetime.fromtimestamp(start, usertz)
+        startsum += midnight_delta(userstart)
+        intrvsum += duration
+        count += 1
+    if count:
+        avgstart = startsum/count
+        avginterval = intrvsum/count
+        return (avgstart, avginterval)
+    else:
+        return (None, None)
+
+
+def cmd_average(expr, chatid, replyid, msg):
+    '''/average - List statistics about sleep time'''
+    if chatid > 0:
+        uid = msg['from']['id']
+        usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
+        avgstart, avginterval = user_average_sleep(usertz, CONN.execute(
+            'SELECT time, duration FROM sleep WHERE user = ?', (uid,)))
+        if avgstart is not None:
+            sendmsg(_('Average: %s, %s→%s') % (hour_minutes(avginterval),
+                hour_minutes(midnight_adjust(avgstart)),
+                hour_minutes(midnight_adjust(avgstart + avginterval))),
+                chatid, replyid)
+        else:
+            sendmsg(_('Not enough data.'), chatid, replyid)
+    else:
+        update_group_members(msg['from'])
+        uid = msg['chat']['id']
+        startsum = intrvsum = 0
+        stats = []
+        text = []
+        for user, group in itertools.groupby(CONN.execute(
+            'SELECT sleep.user, sleep.time, sleep.duration FROM sleep'
+            ' INNER JOIN user_chats ON events.user = user_chats.id'
+            ' WHERE user_chats.chat = ? AND users.subscribed = 1'
+            ' ORDER BY sleep.user', (uid,)),
+            key=operator.itemgetter(0)):
+            usertz = pytz.timezone(USER_CACHE[user]['timezone'])
+            avgstart, avginterval = user_average_sleep(usertz,
+                map(operator.itemgetter(1, 2), group))
+            stats.append((avginterval, avgstart, getufname(USER_CACHE[user])))
+            startsum += avgstart
+            intrvsum += avginterval
+        count = len(stats)
+        if stats:
+            stats.sort(key=lambda x: (-x[0], x[1], x[2]))
+            for interval, start, dispname in stats:
+                text.append('%s: %s, %s→%s' % (dispname, hour_minutes(interval),
+                    hour_minutes(midnight_adjust(start)),
+                    hour_minutes(midnight_adjust(start + interval))))
+            avgstart = startsum/count
+            avginterval = intrvsum/count
+            text.append(_('Average: %s, %s→%s') % (hour_minutes(avginterval),
+                hour_minutes(midnight_adjust(avgstart)),
+                hour_minutes(midnight_adjust(avgstart + avginterval))))
+            sendmsg('\n'.join(text), chatid, replyid)
+        else:
+            sendmsg(_('Not enough data.'), chatid, replyid)
 
 def cmd_subscribe(expr, chatid, replyid, msg):
+    '''/subscribe - Add you to the watchlist'''
     update_user(msg['from'], True)
     sendmsg(_("%s, you are subscribed.") % getufname(msg['from']), chatid, replyid)
 
 
 def cmd_unsubscribe(expr, chatid, replyid, msg):
+    '''/unsubscribe - Remove you from the watchlist'''
     update_user(msg['from'], False)
     sendmsg(_("%s, you are unsubscribed.") % getufname(msg['from']), chatid, replyid)
 
 def cmd_settz(expr, chatid, replyid, msg):
+    '''/settz - Set your timezone'''
     expr = expr.strip()
     if expr and expr in pytz.all_timezones:
         update_user(msg['from'], timezone=expr)
@@ -401,13 +538,13 @@ def cmd_settz(expr, chatid, replyid, msg):
         sendmsg(_("Invalid timezone. Your current timezone is %s.") % current, chatid, replyid)
 
 def cmd_start(expr, chatid, replyid, msg):
-    sendmsg(_("This is Trusted Sleep Bot. It can track users' sleep habit by using Telegram online status.\nSend me /help for help."), chatid, replyid)
+    sendmsg(_("This is Trusted Sleep Bot. It can track users' sleep habit by using Telegram online status. Send me /help for help."), chatid, replyid)
 
 def cmd_help(expr, chatid, replyid, msg):
-    '''/help Show usage.'''
+    '''/help - Show usage'''
     if expr:
         if expr in COMMANDS:
-            h = COMMANDS[expr].__doc__
+            h = _(COMMANDS[expr].__doc__)
             if h:
                 sendmsg(h, chatid, replyid)
             else:
@@ -415,7 +552,7 @@ def cmd_help(expr, chatid, replyid, msg):
         else:
             sendmsg(_('Command not found.'), chatid, replyid)
     else:
-        sendmsg('\n'.join(uniq(cmd.__doc__ for cmdname, cmd in COMMANDS.items() if cmd.__doc__)), chatid, replyid)
+        sendmsg('\n'.join(_(cmd.__doc__) for cmdname, cmd in COMMANDS.items() if cmd.__doc__), chatid, replyid)
 
 def getufname(user, maxlen=100):
     name = user['first_name']
@@ -428,16 +565,15 @@ def getufname(user, maxlen=100):
 def load_config():
     return AttrDict(json.load(open('config.json', encoding='utf-8')))
 
-
 def save_config():
     json.dump(CFG, open('config.json', 'w'), sort_keys=True, indent=1)
+    DB.commit()
 
-
-def run(server_class=ThreadingHTTPServer, handler_class=HTTPHandler):
-    server_address = (CFG.serverip, CFG.serverport)
-    httpd = server_class(server_address, handler_class)
-    httpd.serve_forever()
-
+def handle_update(obj):
+    if "update_id" in obj:
+        handle_api_update(obj)
+    else:
+        handle_tg_update(obj)
 
 # should document usage in docstrings
 COMMANDS = collections.OrderedDict((
@@ -452,19 +588,23 @@ COMMANDS = collections.OrderedDict((
 
 if __name__ == '__main__':
     CFG = load_config()
+    gettext.install('tsleepd', os.path.join(os.path.dirname(os.path.abspath(os.path.realpath(sys.argv[0] or 'locale'))), 'locale'), CFG['languages'])
+    DB, CONN = None, None
+    MSG_Q = queue.Queue()
     USER_CACHE = {}
     TGCLI = tgcli.TelegramCliInterface(CFG.tgclibin)
     TGCLI.ready.wait()
-    TGCLI.on_json = handle_update
+    TGCLI.on_json = MSG_Q.put
     try:
         USER_CACHE = init_db()
-        token_gc()
+        all_status_update()
 
         apithr = threading.Thread(target=getupdates)
         apithr.daemon = True
         apithr.start()
 
-        run()
+        while 1:
+            handle_update(MSG_Q.get())
     finally:
         save_config()
         TGCLI.close()
