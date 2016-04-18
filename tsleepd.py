@@ -381,8 +381,8 @@ def all_status_update():
         'SELECT events.user, events.time FROM events'
         ' INNER JOIN users ON events.user = users.id'
         ' WHERE events.time >= ? AND users.subscribed = 1'
-        ' ORDER BY events.user ASC, events.time ASC', (expires,)),
-        key=operator.itemgetter(0))):
+        ' ORDER BY events.user ASC, events.time ASC', (expires,))),
+        key=operator.itemgetter(0)):
         start, interval = user_status(user, group)
         stats.append((user, start, interval))
         if start and interval:
