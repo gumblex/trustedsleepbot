@@ -317,6 +317,9 @@ def user_status(uid, events):
                 right = etime
                 break
         elif etime > window[1]:
+            if left:
+                intervals.append((etime - left, left))
+                lasttime = right = etime
             break
         elif etime < window[0]:
             left = etime
