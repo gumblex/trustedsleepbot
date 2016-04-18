@@ -358,13 +358,13 @@ def group_status_update(chat):
     expires = time.time() - 86400
     uid = chat['id']
     stats = []
-    for user, group in itertools.groupby(CONN.execute(
+    for user, group in itertools.groupby(tuple(CONN.execute(
         'SELECT events.user, events.time FROM events'
         ' INNER JOIN users ON events.user = users.id'
         ' INNER JOIN user_chats ON events.user = user_chats.user'
         ' WHERE user_chats.chat = ? AND events.time >= ?'
         ' AND users.subscribed = 1'
-        ' ORDER BY events.user ASC, events.time ASC', (uid, expires)),
+        ' ORDER BY events.user ASC, events.time ASC', (uid, expires))),
         key=operator.itemgetter(0)):
         start, interval = user_status(user, group)
         stats.append((user, start, interval))
@@ -377,12 +377,12 @@ def group_status_update(chat):
 def all_status_update():
     expires = time.time() - 86400
     stats = []
-    for user, group in itertools.groupby(CONN.execute(
+    for user, group in itertools.groupby(tuple(CONN.execute(
         'SELECT events.user, events.time FROM events'
         ' INNER JOIN users ON events.user = users.id'
         ' WHERE events.time >= ? AND users.subscribed = 1'
         ' ORDER BY events.user ASC, events.time ASC', (expires,)),
-        key=operator.itemgetter(0)):
+        key=operator.itemgetter(0))):
         start, interval = user_status(user, group)
         stats.append((user, start, interval))
         if start and interval:
