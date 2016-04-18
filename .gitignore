@@ -55,3 +55,4 @@ target/
 
 config.json
 state.json
+*.db

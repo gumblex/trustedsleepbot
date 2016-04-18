@@ -453,12 +453,11 @@ def cmd_status(expr, chatid, replyid, msg):
                 text.append('%s: %s→💤' % (dispname, userstart.strftime('%H:%M')))
         if validintervcount:
             avgstart = startsum/validstartcount
-            if avgstart < 0:
-                avgstart += 86400
             avginterval = intrvsum/validintervcount
             text.append(_('Average: %s, %s→%s') % (
                 hour_minutes(avginterval, False),
-                hour_minutes(avgstart), hour_minutes(avgstart + avginterval)))
+                hour_minutes(midnight_adjust((avgstart)),
+                hour_minutes(midnight_adjust(avgstart + avginterval))))
         sendmsg('\n'.join(text) or _('Not enough data.'), chatid, replyid)
 
 
