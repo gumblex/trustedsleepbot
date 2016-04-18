@@ -416,7 +416,7 @@ def db_getuidbyname(username):
         except ValueError:
             return None
     else:
-        uid = conn.execute('SELECT id FROM users WHERE username LIKE ?', (username,)).fetchone()
+        uid = CONN.execute('SELECT id FROM users WHERE username LIKE ?', (username,)).fetchone()
         if uid:
             return uid[0]
 
