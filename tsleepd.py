@@ -263,10 +263,13 @@ def user_event(user, eventtime):
     if uid in USER_CACHE and USER_CACHE[uid]['subscribed']:
         CONN.execute('INSERT OR IGNORE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
 
-def hour_minutes(seconds):
+def hour_minutes(seconds, zpad=True):
     m = round(seconds / 60)
     h, m = divmod(m, 60)
-    return '%02d:%02d' % (h, m)
+    if zpad:
+        return '%02d:%02d' % (h, m)
+    else:
+        return '%d:%02d' % (h, m)
 
 def replace_dt_time(fromdatetime, seconds):
     return (datetime.datetime.combine(fromdatetime,
@@ -418,7 +421,8 @@ def cmd_status(expr, chatid, replyid, msg):
             if interval:
                 userstart = datetime.datetime.fromtimestamp(start, usertz)
                 end = userstart + datetime.timedelta(seconds=interval)
-                sendmsg(_('Last sleep: %s, %s→%s.') % (hour_minutes(interval),
+                sendmsg(_('Last sleep: %s, %s→%s.') % (
+                    hour_minutes(interval, False),
                     userstart.strftime('%H:%M'), end.strftime('%H:%M')),
                     chatid, replyid)
             else:
@@ -440,7 +444,8 @@ def cmd_status(expr, chatid, replyid, msg):
             validstartcount += 1
             if interval:
                 end = userstart + datetime.timedelta(seconds=interval)
-                text.append('%s: %s, %s→%s' % (dispname, hour_minutes(interval),
+                text.append('%s: %s, %s→%s' % (dispname,
+                    hour_minutes(interval, False),
                     userstart.strftime('%H:%M'), end.strftime('%H:%M')))
                 intrvsum += interval
                 validintervcount += 1
@@ -451,7 +456,8 @@ def cmd_status(expr, chatid, replyid, msg):
             if avgstart < 0:
                 avgstart += 86400
             avginterval = intrvsum/validintervcount
-            text.append(_('Average: %s, %s→%s') % (hour_minutes(avginterval),
+            text.append(_('Average: %s, %s→%s') % (
+                hour_minutes(avginterval, False),
                 hour_minutes(avgstart), hour_minutes(avgstart + avginterval)))
         sendmsg('\n'.join(text) or _('Not enough data.'), chatid, replyid)
 
@@ -484,7 +490,7 @@ def cmd_average(expr, chatid, replyid, msg):
         avgstart, avginterval = user_average_sleep(usertz, CONN.execute(
             'SELECT time, duration FROM sleep WHERE user = ?', (uid,)))
         if avgstart is not None:
-            sendmsg(_('Average: %s, %s→%s') % (hour_minutes(avginterval),
+            sendmsg(_('Average: %s, %s→%s') % (hour_minutes(avginterval, False),
                 hour_minutes(midnight_adjust(avgstart)),
                 hour_minutes(midnight_adjust(avgstart + avginterval))),
                 chatid, replyid)
@@ -513,12 +519,14 @@ def cmd_average(expr, chatid, replyid, msg):
         if stats:
             stats.sort(key=lambda x: (-x[0], x[1], x[2]))
             for interval, start, dispname in stats:
-                text.append('%s: %s, %s→%s' % (dispname, hour_minutes(interval),
+                text.append('%s: %s, %s→%s' % (dispname,
+                    hour_minutes(interval, False),
                     hour_minutes(midnight_adjust(start)),
                     hour_minutes(midnight_adjust(start + interval))))
             avgstart = startsum/count
             avginterval = intrvsum/count
-            text.append(_('Average: %s, %s→%s') % (hour_minutes(avginterval),
+            text.append(_('Average: %s, %s→%s') % (
+                hour_minutes(avginterval, False),
                 hour_minutes(midnight_adjust(avgstart)),
                 hour_minutes(midnight_adjust(avgstart + avginterval))))
             sendmsg('\n'.join(text), chatid, replyid)
