@@ -182,7 +182,7 @@ def handle_api_update(d):
                 logger_botapi.info('Command: /%s %s' % (cmd, expr))
                 COMMANDS[cmd](expr, msg['chat']['id'], msg['message_id'], msg)
             elif msg['chat']['type'] == 'private':
-                sendmsg(_('Invalid command. Send /help for help.'), chatid, replyid)
+                sendmsg(_('Invalid command. Send /help for help.'), msg['chat']['id'], msg['message_id'])
             else:
                 update_user_group(msg['from'], msg['chat'])
             update_user(msg['from'])
@@ -239,7 +239,8 @@ def update_user(user, subscribed=None, timezone=None):
     if uid in USER_CACHE:
         USER_CACHE[uid].update(user)
         updkey = ''
-        updval = [user.get('username'), user.get('first_name', ''), user.get('last_name')]
+        updval = [user.get('username') or None, user.get('first_name', ''),
+                  user.get('last_name')]
         if subscribed is not None:
             updkey += ', subscribed=?'
             updval.append(subscribed)
@@ -255,7 +256,7 @@ def update_user(user, subscribed=None, timezone=None):
         timezone = USER_CACHE[uid]['timezone'] = timezone or CFG['defaulttz']
         subscribed = USER_CACHE[uid]['subscribed'] = subscribed or 0
         CONN.execute('REPLACE INTO users VALUES (?,?,?,?,?,?)',
-                     (uid, user.get('username'), user.get('first_name', ''),
+                     (uid, user.get('username') or None, user.get('first_name', ''),
                      user.get('last_name'), subscribed, timezone))
 
 def user_event(user, eventtime):
@@ -346,9 +347,8 @@ def user_status(uid, events):
     # else: pass
     return start, interval
 
-def user_status_update(user):
+def user_status_update(uid):
     expires = time.time() - 86400
-    uid = user['id']
     start, interval = user_status(uid, CONN.execute(
         'SELECT events.user, events.time FROM events'
         ' INNER JOIN users ON events.user = users.id'
@@ -408,27 +408,57 @@ def update_group_members(chat):
         for m in members:
             update_user_group(m, chat)
 
+@functools.lru_cache(maxsize=100)
+def db_getuidbyname(username):
+    if username.startswith('#'):
+        try:
+            return int(username[1:])
+        except ValueError:
+            return None
+    else:
+        uid = conn.execute('SELECT id FROM users WHERE username LIKE ?', (username,)).fetchone()
+        if uid:
+            return uid[0]
 
 def cmd_status(expr, chatid, replyid, msg):
-    '''/status - List sleeping status'''
-    if chatid > 0:
-        if msg['from']['id'] not in USER_CACHE:
+    '''/status [all|@username] - List sleeping status'''
+    if expr and expr[0] == '@':
+        uid = db_getuidbyname(expr[1:])
+        if not uid:
+            sendmsg(_('User not found.'), chatid, replyid)
+            return
+    elif expr == 'all':
+        uid = None
+    else:
+        uid = msg['from']['id']
+        if uid not in USER_CACHE:
             sendmsg(_('Please first /subscribe.'), chatid, replyid)
             return
-        start, interval = user_status_update(msg['from'])
-        usertz = pytz.timezone(USER_CACHE[msg['from']['id']]['timezone'])
-        if start:
-            if interval:
+    if uid:
+        usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
+        text = [_('%s: local time is %s (%s)') % (
+                getufname(USER_CACHE[uid]),
+                datetime.datetime.now(usertz).strftime('%H:%M'),
+                USER_CACHE[uid]['timezone']
+                )]
+        if USER_CACHE[uid]['subscribed']:
+            start, interval = user_status_update(uid)
+            if start:
                 userstart = datetime.datetime.fromtimestamp(start, usertz)
-                end = userstart + datetime.timedelta(seconds=interval)
-                sendmsg(_('Last sleep: %s, %s→%s.') % (
-                    hour_minutes(interval, False),
-                    userstart.strftime('%H:%M'), end.strftime('%H:%M')),
-                    chatid, replyid)
+                if interval:
+                    end = userstart + datetime.timedelta(seconds=interval)
+                    text.append(_('Last sleep: %s, %s→%s') % (
+                        hour_minutes(interval, False),
+                        userstart.strftime('%H:%M'), end.strftime('%H:%M')))
+                elif uid == msg['from']['id']:
+                    text.append(_('Go to sleep!'))
+                else:
+                    text.append('%s→💤' % userstart.strftime('%H:%M'))
             else:
-                sendmsg(_('Go to sleep!'), chatid, replyid)
+                text.append(_('Not enough data.'))
         else:
-            sendmsg(_('You have been offline for some time.'), chatid, replyid)
+            text.append(_('Not subscribed.'))
+        sendmsg('\n'.join(text), chatid, replyid)
     else:
         update_group_members(msg['chat'])
         text = []
