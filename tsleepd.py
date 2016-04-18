@@ -427,7 +427,7 @@ def cmd_status(expr, chatid, replyid, msg):
         if not uid:
             sendmsg(_('User not found.'), chatid, replyid)
             return
-    elif expr == 'all':
+    elif expr == 'all' and chatid < 0:
         uid = None
     else:
         uid = msg['from']['id']
@@ -509,7 +509,7 @@ def user_average_sleep(usertz, iterable):
 
 def cmd_average(expr, chatid, replyid, msg):
     '''/average - List statistics about sleep time'''
-    if expr == 'all':
+    if expr == 'all' and chatid < 0:
         uid = None
     else:
         uid = msg['from']['id']
