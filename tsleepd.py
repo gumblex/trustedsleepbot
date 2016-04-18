@@ -509,13 +509,15 @@ def user_average_sleep(usertz, iterable):
 
 def cmd_average(expr, chatid, replyid, msg):
     '''/average - List statistics about sleep time'''
-    if chatid > 0:
+    if expr == 'all':
+        uid = None
+    else:
         uid = msg['from']['id']
-        try:
-            usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
-        except KeyError:
+        if uid not in USER_CACHE:
             sendmsg(_('Please first /subscribe.'), chatid, replyid)
             return
+    if uid:
+        usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
         avgstart, avginterval = user_average_sleep(usertz, CONN.execute(
             'SELECT time, duration FROM sleep WHERE user = ?', (uid,)))
         if avgstart is not None:
