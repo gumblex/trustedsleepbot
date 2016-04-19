@@ -308,6 +308,7 @@ def user_status(uid, events):
        .  x |    x------+--x
        .  x | x       x-+----💤?
      x .    |           |    🌝?
+       . x  |           |  x 🌝?
     '''
     start, interval = None, None
     usertime = datetime.datetime.now(pytz.timezone(USER_CACHE[uid]['timezone']))
@@ -341,6 +342,9 @@ def user_status(uid, events):
     if intervals:
         if right:
             interval, start = max(intervals)
+            if interval > CFG['threshold']:
+                # offline for too long
+                start = interval = None
         else:
             start = etime
     elif lasttime:
@@ -398,6 +402,7 @@ def all_status_update():
             CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (user, start, interval))
     CONN.execute('DELETE FROM events WHERE time < ?', (expires,))
+    CONN.execute('DELETE FROM sleep WHERE duration > ?', (CFG['threshold'],))
     return stats
 
 
