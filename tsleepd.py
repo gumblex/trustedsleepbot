@@ -611,7 +611,7 @@ def cmd_average(expr, chatid, replyid, msg):
                     hour_minutes(interval, False),
                     hour_minutes(midnight_adjust(start)),
                     hour_minutes(midnight_adjust(start + interval))))
-            text.append(_('Average: %s, %s→%s') % (
+            text.append(_('Group average: %s, %s→%s') % (
                 hour_minutes(avginterval, False),
                 hour_minutes(midnight_adjust(avgstart)),
                 hour_minutes(midnight_adjust(avgstart + avginterval))))
