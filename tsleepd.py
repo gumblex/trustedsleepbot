@@ -352,7 +352,7 @@ def user_status(uid, events):
     elif left:
         start = left
     # else: pass
-    if usertime.timestamp() - start > CFG['threshold']:
+    if start and usertime.timestamp() - start > CFG['threshold']:
         # also offline for too long
         start = None
     return start, interval
