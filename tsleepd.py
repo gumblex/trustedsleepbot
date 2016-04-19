@@ -300,15 +300,23 @@ def user_status(uid, events):
        /=====================\  <- SELECT
        .  x-+-----------+----💤?
        .    |     x-----+----💤?
-       .    |           | x  🌝?
+       .    |           | x  🌞?
        .  x-+--------x x| xx
        .  x-+-----------+--x
        .  xx| x------x x| xx
        .    | x x-------+-x
        .  x |    x------+--x
        .  x | x       x-+----💤?
-     x .    |           |    🌝?
-       . x  |           |  x 🌝?
+     x .    |           |    🌞?
+       . x  |           |  x 🌞?
+
+    Legend:
+    x	user event
+    .	select boundary (last 24h)
+    -	sleep duration
+    |	cut window (0:00 ~ 6:00 local time)
+    💤	maybe sleeping
+    🌞	maybe awake
     '''
     start, interval = None, None
     usertime = datetime.datetime.now(pytz.timezone(USER_CACHE[uid]['timezone']))
