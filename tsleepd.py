@@ -520,6 +520,54 @@ def user_average_sleep(usertz, iterable):
         return (None, None)
 
 
+def group_average_sleep(uid=None, fulllist=False):
+    _self_cache = group_average_sleep.cache
+    _cache_ttl = 600
+    if not fulllist:
+        try:
+            timestamp, avgstart, avginterval = _self_cache[uid]
+            if time.time() - timestamp < _cache_ttl:
+                return avgstart, avginterval
+        except KeyError:
+            pass
+    startsum = intrvsum = 0
+    stats = []
+    count = 0
+    if uid:
+        result = CONN.execute(
+            'SELECT sleep.user, sleep.time, sleep.duration FROM sleep'
+            ' INNER JOIN users ON sleep.user = users.id'
+            ' INNER JOIN user_chats ON sleep.user = user_chats.user'
+            ' WHERE user_chats.chat = ? AND users.subscribed = 1'
+            ' ORDER BY sleep.user', (uid,))
+    else:
+        result = CONN.execute(
+            'SELECT sleep.user, sleep.time, sleep.duration FROM sleep'
+            ' INNER JOIN users ON sleep.user = users.id'
+            ' INNER JOIN user_chats ON sleep.user = user_chats.user'
+            ' WHERE users.subscribed = 1 ORDER BY sleep.user')
+    for user, group in itertools.groupby(result,
+        key=operator.itemgetter(0)):
+        usertz = pytz.timezone(USER_CACHE[user]['timezone'])
+        avgstart, avginterval = user_average_sleep(usertz,
+            map(operator.itemgetter(1, 2), group))
+        if fulllist:
+            stats.append((avginterval, avgstart, getufname(USER_CACHE[user])))
+        count += 1
+        startsum += avgstart
+        intrvsum += avginterval
+    avgstart = avginterval = None
+    if count:
+        avgstart = startsum/count
+        avginterval = intrvsum/count
+    if fulllist:
+        return stats, avgstart, avginterval
+    else:
+        _self_cache[uid] = (time.time(), avgstart, avginterval)
+        return avgstart, avginterval
+
+group_average_sleep.cache = {}
+
 def cmd_average(expr, chatid, replyid, msg):
     '''/average - List statistics about sleep time'''
     if expr == 'all' and chatid < 0:
@@ -529,37 +577,33 @@ def cmd_average(expr, chatid, replyid, msg):
         if uid not in USER_CACHE:
             sendmsg(_('Please first /subscribe.'), chatid, replyid)
             return
+    text = []
     if uid:
         usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
         avgstart, avginterval = user_average_sleep(usertz, CONN.execute(
             'SELECT time, duration FROM sleep WHERE user = ?', (uid,)))
         if avgstart is not None:
-            sendmsg(_('Average: %s, %s→%s') % (hour_minutes(avginterval, False),
+            text.append(_('Average: %s, %s→%s') % (hour_minutes(avginterval, False),
                 hour_minutes(midnight_adjust(avgstart)),
-                hour_minutes(midnight_adjust(avgstart + avginterval))),
-                chatid, replyid)
+                hour_minutes(midnight_adjust(avgstart + avginterval))))
         else:
-            sendmsg(_('Not enough data.'), chatid, replyid)
+            text.append(_('Not enough data.'))
+        if chatid > 0:
+            avgstart, avginterval = group_average_sleep(None)
+            text.append(_('Global average: %s, %s→%s') % (
+                hour_minutes(avginterval, False),
+                hour_minutes(midnight_adjust(avgstart)),
+                hour_minutes(midnight_adjust(avgstart + avginterval))))
+        else:
+            avgstart, avginterval = group_average_sleep(uid)
+            text.append(_('Group average: %s, %s→%s') % (
+                hour_minutes(avginterval, False),
+                hour_minutes(midnight_adjust(avgstart)),
+                hour_minutes(midnight_adjust(avgstart + avginterval))))
     else:
         update_group_members(msg['chat'])
         uid = msg['chat']['id']
-        startsum = intrvsum = 0
-        stats = []
-        text = []
-        for user, group in itertools.groupby(CONN.execute(
-            'SELECT sleep.user, sleep.time, sleep.duration FROM sleep'
-            ' INNER JOIN users ON sleep.user = users.id'
-            ' INNER JOIN user_chats ON sleep.user = user_chats.user'
-            ' WHERE user_chats.chat = ? AND users.subscribed = 1'
-            ' ORDER BY sleep.user', (uid,)),
-            key=operator.itemgetter(0)):
-            usertz = pytz.timezone(USER_CACHE[user]['timezone'])
-            avgstart, avginterval = user_average_sleep(usertz,
-                map(operator.itemgetter(1, 2), group))
-            stats.append((avginterval, avgstart, getufname(USER_CACHE[user])))
-            startsum += avgstart
-            intrvsum += avginterval
-        count = len(stats)
+        stats, avgstart, avginterval = group_average_sleep(uid, True)
         if stats:
             stats.sort(key=lambda x: (-x[0], x[1], x[2]))
             for interval, start, dispname in stats:
@@ -567,15 +611,14 @@ def cmd_average(expr, chatid, replyid, msg):
                     hour_minutes(interval, False),
                     hour_minutes(midnight_adjust(start)),
                     hour_minutes(midnight_adjust(start + interval))))
-            avgstart = startsum/count
-            avginterval = intrvsum/count
             text.append(_('Average: %s, %s→%s') % (
                 hour_minutes(avginterval, False),
                 hour_minutes(midnight_adjust(avgstart)),
                 hour_minutes(midnight_adjust(avgstart + avginterval))))
-            sendmsg('\n'.join(text), chatid, replyid)
         else:
-            sendmsg(_('Not enough data.'), chatid, replyid)
+            text.append(_('Not enough data.'))
+    sendmsg('\n'.join(text), chatid, replyid)
+
 
 def cmd_subscribe(expr, chatid, replyid, msg):
     '''/subscribe - Add you to the watchlist'''
