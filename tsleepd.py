@@ -62,17 +62,20 @@ class AttrDict(dict):
 
 # Cli bot
 
+tg_mktime = lambda s: time.mktime(time.strptime(s, '%Y-%m-%d %H:%M:%S'))
+
 def handle_tg_update(obj):
     try:
         if obj.get('event') in ('message', 'service'):
             #update_user(obj['from'])
             user_event(obj['from'], obj['date'])
+            if 'when' in obj['from']:
+                user_event(obj['from'], tg_mktime(obj['from']['when']))
         elif obj.get('event') == 'online-status':
             #update_user(obj['user'])
             try:
                 # it's localtime
-                when = time.mktime(time.strptime(obj['when'], '%Y-%m-%d %H:%M:%S'))
-                user_event(obj['user'], when)
+                user_event(obj['user'], tg_mktime(obj['when']))
             except ValueError:
                 pass
     except Exception:
@@ -407,6 +410,8 @@ def update_group_members(chat):
     if members:
         for m in members:
             update_user_group(m, chat)
+            if 'when' in m:
+                user_event(m, tg_mktime(m['when']))
 
 @functools.lru_cache(maxsize=100)
 def db_getuidbyname(username):
@@ -436,11 +441,10 @@ def cmd_status(expr, chatid, replyid, msg):
             return
     if uid:
         usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
+        usertime = datetime.datetime.now(usertz)
         text = [_('%s: local time is %s (%s)') % (
-                getufname(USER_CACHE[uid]),
-                datetime.datetime.now(usertz).strftime('%H:%M'),
-                USER_CACHE[uid]['timezone']
-                )]
+                getufname(USER_CACHE[uid]), usertime.strftime('%H:%M'),
+                USER_CACHE[uid]['timezone'])]
         if USER_CACHE[uid]['subscribed']:
             start, interval = user_status_update(uid)
             if start:
@@ -450,7 +454,8 @@ def cmd_status(expr, chatid, replyid, msg):
                     text.append(_('Last sleep: %s, %s→%s') % (
                         hour_minutes(interval, False),
                         userstart.strftime('%H:%M'), end.strftime('%H:%M')))
-                elif uid == msg['from']['id']:
+                elif (uid == msg['from']['id'] and CFG['cutwindow'][0] <
+                      midnight_delta(usertime) < CFG['cutwindow'][1]):
                     text.append(_('Go to sleep!'))
                 else:
                     text.append('%s→💤' % userstart.strftime('%H:%M'))
