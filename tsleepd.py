@@ -172,7 +172,7 @@ def parse_cmd(text: str):
     if len(cmd[0]) < 2 or cmd[0][0] not in "/'":
         return (None, None)
     expr = t[1] if len(t) > 1 else ''
-    return (cmd[0][1:], expr)
+    return (cmd[0][1:], expr.strip())
 
 
 def handle_api_update(d):
