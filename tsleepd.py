@@ -523,7 +523,9 @@ def user_average_sleep(usertz, iterable):
 def group_average_sleep(uid=None, fulllist=False):
     _self_cache = group_average_sleep.cache
     _cache_ttl = 600
-    if not fulllist:
+    if fulllist:
+        stats = []
+    else:
         try:
             timestamp, avgstart, avginterval = _self_cache[uid]
             if time.time() - timestamp < _cache_ttl:
@@ -531,7 +533,6 @@ def group_average_sleep(uid=None, fulllist=False):
         except KeyError:
             pass
     startsum = intrvsum = 0
-    stats = []
     count = 0
     if uid:
         result = CONN.execute(
@@ -544,10 +545,8 @@ def group_average_sleep(uid=None, fulllist=False):
         result = CONN.execute(
             'SELECT sleep.user, sleep.time, sleep.duration FROM sleep'
             ' INNER JOIN users ON sleep.user = users.id'
-            ' INNER JOIN user_chats ON sleep.user = user_chats.user'
             ' WHERE users.subscribed = 1 ORDER BY sleep.user')
-    for user, group in itertools.groupby(result,
-        key=operator.itemgetter(0)):
+    for user, group in itertools.groupby(result, key=operator.itemgetter(0)):
         usertz = pytz.timezone(USER_CACHE[user]['timezone'])
         avgstart, avginterval = user_average_sleep(usertz,
             map(operator.itemgetter(1, 2), group))
@@ -590,16 +589,18 @@ def cmd_average(expr, chatid, replyid, msg):
             text.append(_('Not enough data.'))
         if chatid > 0:
             avgstart, avginterval = group_average_sleep(None)
-            text.append(_('Global average: %s, %s→%s') % (
-                hour_minutes(avginterval, False),
-                hour_minutes(midnight_adjust(avgstart)),
-                hour_minutes(midnight_adjust(avgstart + avginterval))))
+            if avgstart and avginterval:
+                text.append(_('Global average: %s, %s→%s') % (
+                    hour_minutes(avginterval, False),
+                    hour_minutes(midnight_adjust(avgstart)),
+                    hour_minutes(midnight_adjust(avgstart + avginterval))))
         else:
             avgstart, avginterval = group_average_sleep(uid)
-            text.append(_('Group average: %s, %s→%s') % (
-                hour_minutes(avginterval, False),
-                hour_minutes(midnight_adjust(avgstart)),
-                hour_minutes(midnight_adjust(avgstart + avginterval))))
+            if avgstart and avginterval:
+                text.append(_('Group average: %s, %s→%s') % (
+                    hour_minutes(avginterval, False),
+                    hour_minutes(midnight_adjust(avgstart)),
+                    hour_minutes(midnight_adjust(avgstart + avginterval))))
     else:
         update_group_members(msg['chat'])
         uid = msg['chat']['id']
