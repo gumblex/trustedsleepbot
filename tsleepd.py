@@ -595,7 +595,7 @@ def cmd_average(expr, chatid, replyid, msg):
                     hour_minutes(midnight_adjust(avgstart)),
                     hour_minutes(midnight_adjust(avgstart + avginterval))))
         else:
-            avgstart, avginterval = group_average_sleep(uid)
+            avgstart, avginterval = group_average_sleep(msg['chat']['id'])
             if avgstart and avginterval:
                 text.append(_('Group average: %s, %s→%s') % (
                     hour_minutes(avginterval, False),
