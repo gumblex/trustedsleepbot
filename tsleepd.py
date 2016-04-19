@@ -180,6 +180,8 @@ def handle_api_update(d):
     if 'message' in d:
         try:
             msg = d['message']
+            update_user(msg['from'])
+            user_event(msg['from'], msg['date'])
             cmd, expr = parse_cmd(msg.get('text', ''))
             if cmd in COMMANDS:
                 logger_botapi.info('Command: /%s %s' % (cmd, expr))
@@ -188,8 +190,6 @@ def handle_api_update(d):
                 sendmsg(_('Invalid command. Send /help for help.'), msg['chat']['id'], msg['message_id'])
             else:
                 update_user_group(msg['from'], msg['chat'])
-            update_user(msg['from'])
-            user_event(msg['from'], msg['date'])
         except Exception as ex:
             logger_botapi.exception('Failed to process a message.')
 
