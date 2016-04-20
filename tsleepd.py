@@ -276,9 +276,9 @@ def hour_minutes(seconds, zpad=True):
         return '%d:%02d' % (h, m)
 
 def replace_dt_time(fromdatetime, seconds):
-    return (datetime.datetime.combine(fromdatetime,
-            datetime.time(tzinfo=fromdatetime.tzinfo)) +
-            datetime.timedelta(seconds=seconds))
+    tz = fromdatetime.tzinfo
+    return tz.normalize(datetime.datetime.combine(fromdatetime,
+            datetime.time(tzinfo=tz)) + datetime.timedelta(seconds=seconds))
 
 def midnight_delta(fromdatetime):
     fromtimestamp = fromdatetime.timestamp()
@@ -642,8 +642,7 @@ def cmd_unsubscribe(expr, chatid, replyid, msg):
 
 def cmd_settz(expr, chatid, replyid, msg):
     '''/settz - Set your timezone'''
-    expr = expr.strip()
-    if expr and expr in pytz.all_timezones:
+    if expr and expr in pytz.all_timezones_set:
         update_user(msg['from'], timezone=expr)
         sendmsg(_("Your timezone is %s now.") % expr, chatid, replyid)
     else:
