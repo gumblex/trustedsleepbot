@@ -395,7 +395,7 @@ def group_status_update(chat):
         if start and interval:
             CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (user, start, interval))
-    stats.sort(key=lambda x: (-x[2] if x[2] else 0, x[1], x[0]))
+    stats.sort(key=lambda x: (-x[2] if x[2] else 0, x[1] or float('inf'), x[0]))
     return stats
 
 def all_status_update():
