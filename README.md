@@ -67,6 +67,8 @@ x	user event
 7. If the sleep time can be determined, `REPLACE INTO` the `sleep` table.
 8. (Optional) Clean old events.
 
+**Note**: This bot will not be accurate when a user chooses to hide his/her online status.
+
 License
 -------
 MIT License.

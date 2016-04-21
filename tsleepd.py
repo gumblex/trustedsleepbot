@@ -395,7 +395,7 @@ def group_status_update(chat):
         if start and interval:
             CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (user, start, interval))
-    stats.sort(key=lambda x: x[2] or 0, reverse=1)
+    stats.sort(key=lambda x: (-x[2] or 0, x[1], x[0]))
     return stats
 
 def all_status_update():
@@ -470,8 +470,9 @@ def cmd_status(expr, chatid, replyid, msg):
                     text.append(_('Last sleep: %s, %s→%s') % (
                         hour_minutes(interval, False),
                         userstart.strftime('%H:%M'), end.strftime('%H:%M')))
-                elif (uid == msg['from']['id'] and CFG['cutwindow'][0] <
-                      midnight_delta(usertime) < CFG['cutwindow'][1]):
+                elif (uid == msg['from']['id'] and
+                      CFG['cutwindow'][0] < midnight_delta(usertime) <
+                      (CFG['cutwindow'][0] + CFG['cutwindow'][1]) / 2):
                     text.append(_('Go to sleep!'))
                 else:
                     text.append('%s→💤' % userstart.strftime('%H:%M'))
