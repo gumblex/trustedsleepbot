@@ -347,7 +347,7 @@ midnight_adjust = lambda delta: delta + 86400 if delta < 0 else delta
 def tz_is_day(dt, tzname, lat=None, lon=None):
     timezone = dt.tzinfo
     offset = timezone.utcoffset(dt).total_seconds() / 240
-    clocktime = midnight_delta(dt, False) / 60
+    clocktime = midnight_delta(dt, False) / 3600
     if lat is None:
         if tzname in timezone_location:
             lat, lon = timezone_location[tzname]
@@ -355,7 +355,7 @@ def tz_is_day(dt, tzname, lat=None, lon=None):
             return True
         else:
             return False
-    localtime = clocktime + (lon-offset) / 15
+    localtime = (clocktime + (lon-offset) / 15 + 24) % 24
     a = 2 * math.pi * (dt.timetuple().tm_yday + localtime / 24) / 365
     phi = 0.006918 - 0.399912 * math.cos(a) + 0.070257*math.sin(a) - \
           0.006758 * math.cos(2*a) + 0.000907 * math.sin(2*a) - \
