@@ -202,6 +202,16 @@ def handle_api_update(d):
 class _TimezoneLocationDict(pytz.LazyDict):
     """Map timezone to its principal location."""
 
+    def __getitem__(self, key):
+        if self.data is None:
+            _fill_lock.acquire()
+            try:
+                if self.data is None:
+                    self._fill()
+            finally:
+                _fill_lock.release()
+        return self.data[key]
+
     def _convert_coordinates(self, match):
         lat_text, lon_text = match.groups()
         if len(lat_text) < 7:
