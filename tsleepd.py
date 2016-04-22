@@ -28,7 +28,9 @@ Threads:
 
 
 import os
+import re
 import sys
+import math
 import time
 import json
 import queue
@@ -46,6 +48,8 @@ import concurrent.futures
 
 import pytz
 import tgcli
+
+re_zoneloc = re.compile('([+-]\d{4,7})([+-]\d{4,7})')
 
 logging.basicConfig(stream=sys.stderr, format='%(asctime)s [%(name)s:%(levelname)s] %(message)s', level=logging.DEBUG if sys.argv[-1] == '-v' else logging.INFO)
 
@@ -195,6 +199,39 @@ def handle_api_update(d):
 
 # Processing
 
+class _TimezoneLocationDict(pytz.LazyDict):
+    """Map timezone to its principal location."""
+
+    def _convert_coordinates(self, match):
+        lat_text, lon_text = match.groups()
+        if len(lat_text) < 7:
+            lat = int(lat_text[:-2]) + int(lat_text[-2:]) / 60
+        else:
+            lat = int(lat_text[:-4]) + int(lat_text[-4:-2]) / 60 + int(lat_text[-2:]) / 3600
+        if len(lon_text) < 7:
+            lon = int(lon_text[:-2]) + int(lon_text[-2:]) / 60
+        else:
+            lon = int(lon_text[:-4]) + int(lon_text[-4:-2]) / 60 + int(lon_text[-2:]) / 3600
+        return (lat, lon)
+
+    def _fill(self):
+        data = {}
+        zone_tab = open_resource('zone.tab')
+        try:
+            for line in zone_tab:
+                line = line.decode('UTF-8')
+                if line.startswith('#'):
+                    continue
+                code, coordinates, zone = line.split(None, 4)[:3]
+                match = re_zoneloc.match(coordinates)
+                if match:
+                    data[zone] = self._convert_coordinates(match)
+            self.data = data
+        finally:
+            zone_tab.close()
+
+timezone_location = _TimezoneLocationDict()
+
 def init_db():
     global DB, CONN
     DB = sqlite3.connect(CFG['database'])
@@ -280,17 +317,43 @@ def replace_dt_time(fromdatetime, seconds):
     return tz.normalize(datetime.datetime.combine(fromdatetime,
             datetime.time(tzinfo=tz)) + datetime.timedelta(seconds=seconds))
 
-def midnight_delta(fromdatetime):
+def replace_dt_hours(fromdatetime, hours):
+    tz = fromdatetime.tzinfo
+    return tz.normalize(datetime.datetime.combine(fromdatetime,
+            datetime.time(tzinfo=tz)) + datetime.timedelta(hours=hours))
+
+def midnight_delta(fromdatetime, adjust=True):
     fromtimestamp = fromdatetime.timestamp()
     midnight = datetime.datetime.combine(fromdatetime, 
         datetime.time(tzinfo=fromdatetime.tzinfo)).timestamp()
     delta = fromtimestamp - midnight
-    if delta > 43200:
+    if adjust and delta > 43200:
         return delta - 86400
     else:
         return delta
 
 midnight_adjust = lambda delta: delta + 86400 if delta < 0 else delta
+
+def tz_is_day(dt, tzname, lat=None, lon=None):
+    timezone = dt.tzinfo
+    offset = timezone.utcoffset(dt).total_seconds() / 240
+    clocktime = midnight_delta(dt, False) / 60
+    if lat is None:
+        if tzname in timezone_location:
+            lat, lon = timezone_location[tzname]
+        elif 6 <= clocktime < 18:
+            return True
+        else:
+            return False
+    localtime = clocktime + (lon-offset) / 15
+    a = 2 * math.pi * (dt.timetuple().tm_yday + localtime / 24) / 365
+    phi = 0.006918 - 0.399912 * math.cos(a) + 0.070257*math.sin(a) - \
+          0.006758 * math.cos(2*a) + 0.000907 * math.sin(2*a) - \
+          0.002697 * math.cos(3*a) + 0.001480 * math.sin(3*a)
+    latrad = math.radians(lat)
+    h0 = math.asin(math.cos(math.radians((localtime - 12) * 15)) *
+            math.cos(latrad) * math.cos(phi) + math.sin(latrad) * math.sin(phi))
+    return (h0 > 0)
 
 def user_status(uid, events):
     '''
@@ -653,6 +716,31 @@ def cmd_settz(expr, chatid, replyid, msg):
             current = CFG['defaulttz']
         sendmsg(_("Invalid timezone. Your current timezone is %s.") % current, chatid, replyid)
 
+def cmd_time(expr, chatid, replyid, msg):
+    '''/time - Get time for various timezones'''
+    tzs = list(filter(lambda x: x in pytz.all_timezones_set, expr.split()))
+    if not tzs:
+        if chatid > 0:
+            tzs = [USER_CACHE[msg['from']['id']]['timezone']]
+        else:
+            tzs = [row[0] for row in CONN.execute(
+                'SELECT users.timezone FROM users'
+                ' INNER JOIN user_chats ON users.id = user_chats.user'
+                ' WHERE user_chats.chat = ? GROUP BY users.timezone'
+                ' ORDER BY count(users.timezone) DESC, users.timezone ASC',
+                (msg['chat']['id'],))]
+    if tzs:
+        text = [_('The time is:')]
+        for tz in tzs:
+            usertime = datetime.datetime.now(pytz.timezone(tz))
+            text.append(' '.join((
+               '🌞' if tz_is_day(usertime, tz) else '🌜',
+                usertime.strftime('%H:%M'), tz
+            )))
+        sendmsg('\n'.join(text), chatid, replyid)
+    else:
+        sendmsg(_("No timezone specified."), chatid, replyid)
+
 def cmd_start(expr, chatid, replyid, msg):
     sendmsg(_("This is Trusted Sleep Bot. It can track users' sleep habit by using Telegram online status. Send me /help for help."), chatid, replyid)
 
@@ -696,6 +784,7 @@ COMMANDS = collections.OrderedDict((
     ('status', cmd_status),
     ('average', cmd_average),
     ('settz', cmd_settz),
+    ('time', cmd_time),
     ('subscribe', cmd_subscribe),
     ('unsubscribe', cmd_unsubscribe),
     ('help', cmd_help),
