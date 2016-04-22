@@ -49,7 +49,7 @@ import concurrent.futures
 import pytz
 import tgcli
 
-re_zoneloc = re.compile('([+-]\d{4,7})([+-]\d{4,7})')
+re_zoneloc = re.compile(r'([+-]\d{4,7})([+-]\d{4,7})')
 
 logging.basicConfig(stream=sys.stderr, format='%(asctime)s [%(name)s:%(levelname)s] %(message)s', level=logging.DEBUG if sys.argv[-1] == '-v' else logging.INFO)
 
@@ -216,7 +216,7 @@ class _TimezoneLocationDict(pytz.LazyDict):
 
     def _fill(self):
         data = {}
-        zone_tab = open_resource('zone.tab')
+        zone_tab = pytz.open_resource('zone.tab')
         try:
             for line in zone_tab:
                 line = line.decode('UTF-8')
