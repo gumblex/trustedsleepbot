@@ -312,6 +312,13 @@ def update_user(user, subscribed=None, timezone=None):
 def user_event(user, eventtime):
     uid = user.get('peer_id') or user['id']
     if uid in USER_CACHE and USER_CACHE[uid]['subscribed']:
+        # https://github.com/vysheng/tg/wiki/Scripting-notes
+        # > To check whether a user is online, update the contact list and
+        # > compare user_status["when"] with the current time. If the status
+        # > is in the future, the contact is online right now.
+        now = time.time()
+        if eventtime > now:
+            eventtime = now
         CONN.execute('INSERT OR IGNORE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
 
 def hour_minutes(seconds, zpad=True):
