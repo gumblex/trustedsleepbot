@@ -287,10 +287,12 @@ def update_user_group(user, chat):
 def update_user(user, subscribed=None, timezone=None):
     uid = user.get('peer_id') or user['id']
     if uid in USER_CACHE:
-        USER_CACHE[uid].update(user)
         updkey = ''
         updval = [user.get('username') or None, user.get('first_name', ''),
                   user.get('last_name')]
+        USER_CACHE[uid]['username'] = updval[0]
+        USER_CACHE[uid]['first_name'] = updval[1]
+        USER_CACHE[uid]['last_name'] = updval[2]
         if subscribed is not None:
             updkey += ', subscribed=?'
             updval.append(subscribed)
