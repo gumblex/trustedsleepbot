@@ -182,7 +182,7 @@ def parse_cmd(text: str):
     if len(cmd[0]) < 2 or cmd[0][0] != "/":
         return (None, None)
     if len(cmd) > 1 and 'username' in CFG and cmd[-1] != CFG['username']:
-        return None
+        return (None, None)
     expr = t[1] if len(t) > 1 else ''
     return (cmd[0][1:], expr.strip())
 
