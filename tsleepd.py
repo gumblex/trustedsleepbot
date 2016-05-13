@@ -152,6 +152,12 @@ def sendmsg(text, chat_id, reply_to_message_id=None):
         reply_id = None
     return bot_api('sendMessage', chat_id=chat_id, text=text, reply_to_message_id=reply_id)
 
+def updatebotinfo():
+    global CFG
+    d = bot_api('getMe')
+    CFG['username'] = d.get('username')
+    CFG['nickname'] = d.get('first_name')
+
 def getupdates():
     global CFG
     while 1:
@@ -173,8 +179,10 @@ def parse_cmd(text: str):
     if not t:
         return (None, None)
     cmd = t[0].rsplit('@', 1)
-    if len(cmd[0]) < 2 or cmd[0][0] not in "/'":
+    if len(cmd[0]) < 2 or cmd[0][0] != "/":
         return (None, None)
+    if len(cmd) > 1 and 'username' in CFG and cmd[-1] != CFG['username']:
+        return None
     expr = t[1] if len(t) > 1 else ''
     return (cmd[0][1:], expr.strip())
 
@@ -823,6 +831,7 @@ if __name__ == '__main__':
         USER_CACHE = init_db()
         all_status_update()
 
+        updatebotinfo()
         apithr = threading.Thread(target=getupdates)
         apithr.daemon = True
         apithr.start()
