@@ -465,7 +465,7 @@ def user_status_update(uid):
     if start and interval and complete:
         CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (uid, start, interval))
-    return start, interval
+    return start, interval, complete
 
 def group_status_update(chat):
     expires = time.time() - 86400
