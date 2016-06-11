@@ -34,6 +34,7 @@ import math
 import time
 import json
 import queue
+import signal
 import sqlite3
 import logging
 import gettext
@@ -326,7 +327,7 @@ def user_event(user, eventtime):
         # > To check whether a user is online, update the contact list and
         # > compare user_status["when"] with the current time. If the status
         # > is in the future, the contact is online right now.
-        now = time.time()
+        now = int(time.time())
         if eventtime > now:
             eventtime = now
         CONN.execute('INSERT OR IGNORE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
@@ -805,6 +806,11 @@ def handle_update(obj):
     else:
         handle_tg_update(obj)
 
+def sig_exit(signum, frame):
+    save_config()
+    TGCLI.close()
+    logging.info('Exited upon signal %s' % signum)
+
 # should document usage in docstrings
 COMMANDS = collections.OrderedDict((
     ('status', cmd_status),
@@ -826,6 +832,7 @@ if __name__ == '__main__':
     TGCLI = tgcli.TelegramCliInterface(CFG.tgclibin)
     TGCLI.ready.wait()
     TGCLI.on_json = MSG_Q.put
+    signal.signal(signal.SIGTERM, sig_exit)
     try:
         USER_CACHE = init_db()
         all_status_update()
