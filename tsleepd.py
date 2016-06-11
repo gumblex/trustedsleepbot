@@ -396,7 +396,7 @@ def user_status(uid, events):
        .  xx| x------x x| xx
        .    | x x-------+-x
        .  x |    x------+--x
-       .  x | x       x-+----💤?
+       .  x | x-------x |    🌞?
      x .    |           |    🌞?
        . x  |           |  x 🌞?
 
@@ -414,6 +414,7 @@ def user_status(uid, events):
               replace_dt_time(usertime, CFG['cutwindow'][1]).timestamp())
     lasttime = None
     left, right = None, None
+    complete = True
     intervals = []
     for _user, etime in events:
         if lasttime:
@@ -438,13 +439,11 @@ def user_status(uid, events):
         else:
             lasttime = etime
     if intervals:
-        if right:
-            interval, start = max(intervals)
-            if interval > CFG['threshold']:
-                # offline for too long
-                start = interval = None
-        else:
-            start = etime
+        complete = right is not None
+        interval, start = max(intervals)
+        if interval > CFG['threshold']:
+            # offline for too long
+            start = interval = None
     elif lasttime:
         start = lasttime
     elif left:
@@ -453,17 +452,17 @@ def user_status(uid, events):
     if interval is None and start and usertime.timestamp() - start > CFG['threshold']:
         # also offline for too long
         start = None
-    return start, interval
+    return start, interval, complete
 
 def user_status_update(uid):
     expires = time.time() - 86400
-    start, interval = user_status(uid, CONN.execute(
+    start, interval, complete = user_status(uid, CONN.execute(
         'SELECT events.user, events.time FROM events'
         ' INNER JOIN users ON events.user = users.id'
         ' WHERE events.user = ? AND events.time >= ?'
         ' AND users.subscribed = 1'
         ' ORDER BY events.user ASC, events.time ASC', (uid, expires)))
-    if start and interval:
+    if start and interval and complete:
         CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (uid, start, interval))
     return start, interval
@@ -480,9 +479,9 @@ def group_status_update(chat):
         ' AND users.subscribed = 1'
         ' ORDER BY events.user ASC, events.time ASC', (uid, expires))),
         key=operator.itemgetter(0)):
-        start, interval = user_status(user, group)
+        start, interval, complete = user_status(user, group)
         stats.append((user, start, interval))
-        if start and interval:
+        if start and interval and complete:
             CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (user, start, interval))
     stats.sort(key=lambda x: (-x[2] if x[2] else 0, x[1] or float('inf'), x[0]))
@@ -497,9 +496,9 @@ def all_status_update():
         ' WHERE events.time >= ? AND users.subscribed = 1'
         ' ORDER BY events.user ASC, events.time ASC', (expires,))),
         key=operator.itemgetter(0)):
-        start, interval = user_status(user, group)
+        start, interval, complete = user_status(user, group)
         stats.append((user, start, interval))
-        if start and interval:
+        if start and interval and complete:
             CONN.execute('REPLACE INTO sleep (user, time, duration) VALUES (?,?,?)',
                      (user, start, interval))
     CONN.execute('DELETE FROM events WHERE time < ?', (expires,))
@@ -552,7 +551,7 @@ def cmd_status(expr, chatid, replyid, msg):
                 getufname(USER_CACHE[uid]), usertime.strftime('%H:%M'),
                 USER_CACHE[uid]['timezone'])]
         if USER_CACHE[uid]['subscribed']:
-            start, interval = user_status_update(uid)
+            start, interval, complete = user_status_update(uid)
             if start:
                 userstart = datetime.datetime.fromtimestamp(start, usertz)
                 if interval:
