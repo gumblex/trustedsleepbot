@@ -203,7 +203,7 @@ def handle_api_update(d):
                 sendmsg(_('Invalid command. Send /help for help.'), msg['chat']['id'], msg['message_id'])
             else:
                 update_user_group(msg['from'], msg['chat'])
-        except Exception as ex:
+        except Exception:
             logger_botapi.exception('Failed to process a message.')
 
 # Processing
@@ -553,17 +553,32 @@ def cmd_status(expr, chatid, replyid, msg):
                 USER_CACHE[uid]['timezone'])]
         if USER_CACHE[uid]['subscribed']:
             start, interval, complete = user_status_update(uid)
+            cutstart, cutend = CFG['cutwindow']
+            cutmid = (cutstart + cutend) / 2
             if start:
                 userstart = datetime.datetime.fromtimestamp(start, usertz)
                 if interval:
                     end = userstart + datetime.timedelta(seconds=interval)
+                # 0     3     6
+                # +===========+
+                # |  ---+-----+--x
+                #    ^start      ^end ^now
+                # sure
+                # | ----+---x |
+                #   ^start  ^end+now
+                # we are not sure, so don't write the db
+                if interval and (complete or midnight_delta(end) > cutmid):
                     text.append(_('Last sleep: %s, %s→%s') % (
                         hour_minutes(interval, False),
                         userstart.strftime('%H:%M'), end.strftime('%H:%M')))
+                # |     |     | and is current user
+                #    ^now
                 elif (uid == msg['from']['id'] and
-                      CFG['cutwindow'][0] < midnight_delta(usertime) <
-                      (CFG['cutwindow'][0] + CFG['cutwindow'][1]) / 2):
+                      cutstart < midnight_delta(usertime) < cutmid):
                     text.append(_('Go to sleep!'))
+                # | x   |     |
+                #   ^start  ^now
+                #   ^s ^now
                 else:
                     text.append('%s→💤' % userstart.strftime('%H:%M'))
             else:
