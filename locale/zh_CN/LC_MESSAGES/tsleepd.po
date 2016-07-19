@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Trusted Sleep Bot\n"
 "POT-Creation-Date: 2016-07-19 15:08+0800\n"
-"PO-Revision-Date: 2016-07-19 15:08+0800\n"
+"PO-Revision-Date: 2016-07-19 15:31+0800\n"
 "Last-Translator: Dingyuan Wang <abcdoyle888@gmail.com>\n"
 "Language-Team: \n"
 "Language: zh_CN\n"
@@ -278,6 +278,54 @@ msgstr "没有命令 %s 的帮助"
 #: tsleepd.py:820
 msgid "Command not found."
 msgstr "命令未找到。"
+
+#: humanizetime.py:93
+#, python-format
+msgid "%d second"
+msgid_plural "%d seconds"
+msgstr[0] "%d 秒"
+
+#: humanizetime.py:98
+#, python-format
+msgid "%d minute"
+msgid_plural "%d minutes"
+msgstr[0] "%d 分钟"
+
+#: humanizetime.py:103
+#, python-format
+msgid "%d hour"
+msgid_plural "%d hours"
+msgstr[0] "%d 小时"
+
+#: humanizetime.py:108 humanizetime.py:111
+#, python-format
+msgid "%d day"
+msgid_plural "%d days"
+msgstr[0] "%d 天"
+
+#: humanizetime.py:115
+#, python-format
+msgid "%d month"
+msgid_plural "%d months"
+msgstr[0] "%d 个月"
+
+#: humanizetime.py:120 humanizetime.py:128
+#, python-format
+msgid "1 year, %d day"
+msgid_plural "1 year, %d days"
+msgstr[0] "一年零 %d 天"
+
+#: humanizetime.py:125
+#, python-format
+msgid "1 year, %d month"
+msgid_plural "1 year, %d months"
+msgstr[0] "一年零 %d 个月"
+
+#: humanizetime.py:130
+#, python-format
+msgid "%d year"
+msgid_plural "%d years"
+msgstr[0] "%d 年"
 
 #~ msgid "/status - List sleeping status"
 #~ msgstr "/status - 显示睡眠状态"

@@ -30,6 +30,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import time
+from gettext import ngettext
 from datetime import datetime, timedelta, date
 
 __all__ = ['naturaldelta', 'naturaltime', 'naturalday', 'naturaldate']
