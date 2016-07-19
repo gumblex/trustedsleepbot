@@ -49,6 +49,7 @@ import concurrent.futures
 
 import pytz
 import tgcli
+import humanizetime
 
 re_zoneloc = re.compile(r'([+-]\d{4,7})([+-]\d{4,7})')
 
@@ -332,6 +333,14 @@ def user_event(user, eventtime):
             eventtime = now
         CONN.execute('INSERT OR IGNORE INTO events (user, time) VALUES (?, ?)', (uid, eventtime))
 
+def user_last_seen(user):
+    uid = user.get('peer_id') or user['id']
+    if uid in USER_CACHE and USER_CACHE[uid]['subscribed']:
+        res = CONN.execute('SELECT time FROM events WHERE '
+            'user = ? ORDER BY time DESC LIMIT 1', (uid,)).fetchone()
+        if res:
+            return res[0]
+
 def hour_minutes(seconds, zpad=True):
     m = round(seconds / 60)
     h, m = divmod(m, 60)
@@ -548,11 +557,23 @@ def cmd_status(expr, chatid, replyid, msg):
     if uid:
         usertz = pytz.timezone(USER_CACHE[uid]['timezone'])
         usertime = datetime.datetime.now(usertz)
+        lastseen = user_last_seen(USER_CACHE[uid])
+        if lastseen:
+            userseendelta = usertime - datetime.datetime.fromtimestamp(
+                            lastseen, usertz)
+        else:
+            userseendelta = None
         text = [_('%s: local time is %s (%s)') % (
                 getufname(USER_CACHE[uid]), usertime.strftime('%H:%M'),
                 USER_CACHE[uid]['timezone'])]
         if USER_CACHE[uid]['subscribed']:
             start, interval, complete = user_status_update(uid)
+            if userseendelta:
+                ndelta = humanizetime.naturaldelta(userseendelta)
+                if ndelta in (_("a moment"), _("now")):
+                    text.append(_('Online'))
+                else:
+                    text.append(_('Last seen: %s ago') % ndelta)
             cutstart, cutend = CFG['cutwindow']
             cutmid = (cutstart + cutend) / 2
             if start:
@@ -580,7 +601,7 @@ def cmd_status(expr, chatid, replyid, msg):
                 #   ^start  ^now
                 #   ^s ^now
                 else:
-                    text.append('%s→💤' % userstart.strftime('%H:%M'))
+                    text.append(_('Sleep: %s→💤') % userstart.strftime('%H:%M'))
             else:
                 text.append(_('Not enough data.'))
         else:
