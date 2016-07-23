@@ -568,7 +568,7 @@ def cmd_status(expr, chatid, replyid, msg):
                 USER_CACHE[uid]['timezone'])]
         if USER_CACHE[uid]['subscribed']:
             start, interval, complete = user_status_update(uid)
-            if uid == msg['from']['id'] and userseendelta:
+            if uid != msg['from']['id'] and userseendelta:
                 ndelta = humanizetime.naturaldelta(userseendelta)
                 if ndelta in (_("a moment"), _("now")):
                     text.append(_('Online'))
