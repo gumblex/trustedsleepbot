@@ -547,6 +547,8 @@ def cmd_status(expr, chatid, replyid, msg):
         if not uid:
             sendmsg(_('User not found.'), chatid, replyid)
             return
+    elif 'reply_to_message' in msg:
+        uid = msg['reply_to_message']['from']['id']
     elif expr == 'all' and chatid < 0:
         uid = None
     else:
