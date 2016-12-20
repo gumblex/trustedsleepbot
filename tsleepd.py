@@ -807,7 +807,8 @@ def cmd_time(expr, chatid, replyid, msg):
         sendmsg(_("No timezone specified."), chatid, replyid)
 
 def cmd_start(expr, chatid, replyid, msg):
-    sendmsg(_("This is Trusted Sleep Bot. It can track users' sleep habit by using Telegram online status. Send me /help for help."), chatid, replyid)
+    if chatid > 0:
+        sendmsg(_("This is Trusted Sleep Bot. It can track users' sleep habit by using Telegram online status. Send me /help for help."), chatid, replyid)
 
 def cmd_help(expr, chatid, replyid, msg):
     '''/help - Show usage'''
